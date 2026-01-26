@@ -1,0 +1,30 @@
+# =========================
+# Environment variables
+# =========================
+.env
+backend/.env
+temp
+
+# =========================
+# Temporary & generated files
+# =========================
+backend/temp/
+backend/temp/generated-images/
+
+# =========================
+# Node / Frontend
+# =========================
+node_modules/
+dist/
+build/
+
+# =========================
+# Logs
+# =========================
+*.log
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
