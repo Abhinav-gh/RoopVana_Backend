@@ -14,6 +14,7 @@ export interface GenerateImageResponse {
   generationTime: number; // in milliseconds
   language: string;
   error?: string;
+  credits?: number;
 }
 
 export interface SpeechToTextRequest {

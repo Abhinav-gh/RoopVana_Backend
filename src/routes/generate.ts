@@ -9,9 +9,84 @@ import {
   HealthCheckResponse 
 } from '../types';
 import { asyncHandler, AppError } from '../middleware/errorHandler';
-import { generateLimiter, speechLimiter } from '../middleware/rateLimiter';
+import { speechLimiter, userCreditLimiter, deductUserCredit } from '../middleware/rateLimiter';
+import { authMiddleware } from '../middleware/authMiddleware';
+import { db } from '../config/firebaseAdmin';
+import admin from '../config/firebaseAdmin';
 
 const router = Router();
+
+// ============================================
+// Helper: Store user request data in Firestore
+// ============================================
+const storeUserRequestData = async (data: {
+  userId: string;
+  email: string;
+  type: 'text-to-image' | 'image-to-image';
+  prompt: string;
+  improvedPrompt: string;
+  language: string;
+  style: string | null;
+  inputImageProvided: boolean;
+  generationTimeMs: number;
+  success: boolean;
+}) => {
+  try {
+    await db.collection('userRequests').add({
+      ...data,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (error: any) {
+    console.error('❌ Error storing user request data:', error.message);
+    // Non-blocking — don't fail the response
+  }
+};
+
+// ============================================
+// Public routes (no auth required)
+// ============================================
+
+/**
+ * GET /api/health
+ * Health check endpoint
+ */
+router.get('/health', (req: Request, res: Response<HealthCheckResponse>) => {
+  const response: HealthCheckResponse = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    services: {
+      gemini: !!process.env.GEMINI_API_KEY,
+      speechToText: speechToTextService.isAvailable(),
+    },
+  };
+
+  res.json(response);
+});
+
+/**
+ * GET /api/languages
+ * Get list of supported languages
+ */
+router.get('/languages', (req: Request, res: Response) => {
+  const languages = [
+    { code: 'hi-IN', name: 'Hindi', native: 'हिंदी' },
+    { code: 'ta-IN', name: 'Tamil', native: 'தமிழ்' },
+    { code: 'te-IN', name: 'Telugu', native: 'తెలుగు' },
+    { code: 'pa-IN', name: 'Punjabi', native: 'ਪੰਜਾਬੀ' },
+    { code: 'bn-IN', name: 'Bengali', native: 'বাংলা' },
+    { code: 'gu-IN', name: 'Gujarati', native: 'ગુજરાતી' },
+    { code: 'kn-IN', name: 'Kannada', native: 'ಕನ್ನಡ' },
+    { code: 'ml-IN', name: 'Malayalam', native: 'മലയാളം' },
+    { code: 'mr-IN', name: 'Marathi', native: 'मराठी' },
+    { code: 'en-IN', name: 'English', native: 'English' },
+  ];
+
+  res.json({ success: true, languages });
+});
+
+// ============================================
+// Protected routes (auth required)
+// ============================================
 
 /**
  * POST /api/generate
@@ -19,7 +94,8 @@ const router = Router();
  */
 router.post(
   '/generate',
-  generateLimiter,
+  authMiddleware,
+  userCreditLimiter,
   asyncHandler(async (req: Request<{}, {}, GenerateImageRequest>, res: Response<GenerateImageResponse>) => {
     const { prompt, language, style } = req.body;
 
@@ -32,7 +108,7 @@ router.post(
       throw new AppError('Language is required', 400);
     }
 
-    console.log(`📝 Image generation request:`, { prompt, language, style });
+    console.log(`📝 Image generation request from ${req.user?.email}:`, { prompt, language, style });
 
     const startTime = Date.now();
 
@@ -54,15 +130,33 @@ router.post(
 
       const generationTime = Date.now() - startTime;
 
+      // Step 4: Deduct 1 credit
+      const newCredits = await deductUserCredit(req.user!.uid);
+
+      // Step 5: Store request data in Firestore for feedback analysis
+      await storeUserRequestData({
+        userId: req.user!.uid,
+        email: req.user!.email,
+        type: 'text-to-image',
+        prompt: prompt,
+        improvedPrompt: improvedPrompt,
+        language: language,
+        style: style || null,
+        inputImageProvided: false,
+        generationTimeMs: generationTime,
+        success: true,
+      });
+
       const response: GenerateImageResponse = {
         success: true,
         imageUrl: imageUrl,
         prompt: improvedPrompt,
         generationTime: generationTime,
         language: language,
+        credits: newCredits,
       };
 
-      console.log(`✅ Image generated in ${generationTime}ms`);
+      console.log(`✅ Image generated in ${generationTime}ms (credits remaining: ${newCredits})`);
       res.json(response);
     } catch (error: any) {
       console.error('❌ Image generation failed:', error);
@@ -77,7 +171,8 @@ router.post(
  */
 router.post(
   '/generate/from-image',
-  generateLimiter,
+  authMiddleware,
+  userCreditLimiter,
   asyncHandler(async (req: Request, res: Response) => {
     const { imageData, textPrompt, style } = req.body;
 
@@ -86,7 +181,7 @@ router.post(
       throw new AppError('Image data is required', 400);
     }
 
-    console.log(`🖼️ Image-to-image generation request:`, { 
+    console.log(`🖼️ Image-to-image generation request from ${req.user?.email}:`, { 
       hasImage: !!imageData, 
       textPrompt: textPrompt || '(none)',
       style 
@@ -101,13 +196,31 @@ router.post(
 
       const generationTime = Date.now() - startTime;
 
+      // Deduct 1 credit
+      const newCredits = await deductUserCredit(req.user!.uid);
+
+      // Store request data in Firestore for feedback analysis
+      await storeUserRequestData({
+        userId: req.user!.uid,
+        email: req.user!.email,
+        type: 'image-to-image',
+        prompt: textPrompt || '',
+        improvedPrompt: '',
+        language: 'en',
+        style: style || null,
+        inputImageProvided: true,
+        generationTimeMs: generationTime,
+        success: true,
+      });
+
       const response = {
         success: true,
         imageUrl: imageUrl,
         generationTime: generationTime,
+        credits: newCredits,
       };
 
-      console.log(`✅ Image generated from reference in ${generationTime}ms`);
+      console.log(`✅ Image generated from reference in ${generationTime}ms (credits remaining: ${newCredits})`);
       res.json(response);
     } catch (error: any) {
       console.error('❌ Image-to-image generation failed:', error);
@@ -122,6 +235,7 @@ router.post(
  */
 router.post(
   '/speech-to-text',
+  authMiddleware,
   speechLimiter,
   asyncHandler(async (req: Request<{}, {}, SpeechToTextRequest>, res: Response<SpeechToTextResponse>) => {
     const { audioData, languageCode } = req.body;
@@ -168,41 +282,35 @@ router.post(
 );
 
 /**
- * GET /api/health
- * Health check endpoint
+ * GET /api/user/quota
+ * Get the current user's remaining generation quota
  */
-router.get('/health', (req: Request, res: Response<HealthCheckResponse>) => {
-  const response: HealthCheckResponse = {
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    services: {
-      gemini: !!process.env.GEMINI_API_KEY,
-      speechToText: speechToTextService.isAvailable(),
-    },
-  };
+router.get(
+  '/user/quota',
+  authMiddleware,
+  asyncHandler(async (req: Request, res: Response) => {
+    const uid = req.user!.uid;
+    const today = new Date().toISOString().split('T')[0];
+    const usageRef = db.collection('userUsage').doc(uid);
+    const usageDoc = await usageRef.get();
+    const maxGenerations = require('../config/env').default.maxGenerationsPerUserPerDay;
 
-  res.json(response);
-});
+    let generationsToday = 0;
 
-/**
- * GET /api/languages
- * Get list of supported languages
- */
-router.get('/languages', (req: Request, res: Response) => {
-  const languages = [
-    { code: 'hi-IN', name: 'Hindi', native: 'हिंदी' },
-    { code: 'ta-IN', name: 'Tamil', native: 'தமிழ்' },
-    { code: 'te-IN', name: 'Telugu', native: 'తెలుగు' },
-    { code: 'pa-IN', name: 'Punjabi', native: 'ਪੰਜਾਬੀ' },
-    { code: 'bn-IN', name: 'Bengali', native: 'বাংলা' },
-    { code: 'gu-IN', name: 'Gujarati', native: 'ગુજરાતી' },
-    { code: 'kn-IN', name: 'Kannada', native: 'ಕನ್ನಡ' },
-    { code: 'ml-IN', name: 'Malayalam', native: 'മലയാളം' },
-    { code: 'mr-IN', name: 'Marathi', native: 'मराठी' },
-    { code: 'en-IN', name: 'English', native: 'English' },
-  ];
+    if (usageDoc.exists) {
+      const data = usageDoc.data()!;
+      if (data.lastResetDate === today) {
+        generationsToday = data.generationsToday || 0;
+      }
+    }
 
-  res.json({ success: true, languages });
-});
+    res.json({
+      success: true,
+      generationsToday,
+      remainingGenerations: Math.max(0, maxGenerations - generationsToday),
+      maxGenerations,
+    });
+  })
+);
 
 export default router;

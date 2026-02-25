@@ -58,7 +58,9 @@ app.get('/', (req: Request, res: Response) => {
   });
 });
 
-// API routes
+// API routes - auth middleware applied to all routes under /api
+// (health check is inside generateRoutes but doesn't need auth,
+//  so we apply auth selectively in the route file)
 app.use('/api', generateRoutes);
 
 // 404 handler

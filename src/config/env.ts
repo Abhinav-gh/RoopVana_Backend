@@ -15,6 +15,8 @@ interface Config {
   rateLimitMaxRequests: number;
   gcsBucketName?: string;
   enableTranslation: boolean;
+  firebaseServiceAccountKey: string;
+  maxGenerationsPerUserPerDay: number;
 }
 
 const config: Config = {
@@ -28,6 +30,8 @@ const config: Config = {
   rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '10', 10),
   gcsBucketName: process.env.GCS_BUCKET_NAME,
   enableTranslation: process.env.ENABLE_TRANSLATION === 'true',
+  firebaseServiceAccountKey: process.env.FIREBASE_SERVICE_ACCOUNT_KEY || '',
+  maxGenerationsPerUserPerDay: parseInt(process.env.MAX_GENERATIONS_PER_USER_PER_DAY || '10', 10),
 };
 
 // Validate required environment variables

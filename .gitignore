@@ -6,6 +6,12 @@ backend/.env
 temp
 
 # =========================
+# Firebase service account keys
+# =========================
+*-firebase-adminsdk-*.json
+credentials/
+
+# =========================
 # Temporary & generated files
 # =========================
 backend/temp/
