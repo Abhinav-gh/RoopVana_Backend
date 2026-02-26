@@ -1,8 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import config from '../config/env';
-import * as fs from 'fs';
-import * as path from 'path';
 
 class GeminiService {
   private genAI: GoogleGenAI;
@@ -75,20 +73,7 @@ class GeminiService {
       throw new Error('No image data in response');
     }
 
-    // Save image
-    const outputDir = path.join(process.cwd(), 'temp', 'generated-images');
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
-
-    const timestamp = Date.now();
-    const fileName = `fashion-${timestamp}.png`;
-    const filePath = path.join(outputDir, fileName);
-
-    const buffer = Buffer.from(imageData, 'base64');
-    fs.writeFileSync(filePath, buffer);
-
-    console.log(`✅ Image generated and saved: ${fileName}`);
+    console.log(`✅ Image generated successfully`);
 
     return `data:image/png;base64,${imageData}`;
   } catch (error) {
@@ -205,20 +190,7 @@ class GeminiService {
         throw new Error('No image data in response');
       }
 
-      // Save the generated image
-      const outputDir = path.join(process.cwd(), 'temp', 'generated-images');
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-      }
-
-      const timestamp = Date.now();
-      const fileName = `fashion-from-image-${timestamp}.png`;
-      const filePath = path.join(outputDir, fileName);
-
-      const buffer = Buffer.from(outputImageData, 'base64');
-      fs.writeFileSync(filePath, buffer);
-
-      console.log(`✅ Image-to-image generation saved: ${fileName}`);
+      console.log(`✅ Image-to-image generation complete`);
 
       return `data:image/png;base64,${outputImageData}`;
     } catch (error) {
