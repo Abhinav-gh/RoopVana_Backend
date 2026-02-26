@@ -2,6 +2,7 @@ import express, { Application, Request, Response } from 'express';
 import cors from 'cors';
 import config from './config/env';
 import generateRoutes from './routes/generate';
+import adminRoutes from './routes/admin';
 import { errorHandler } from './middleware/errorHandler';
 import { apiLimiter } from './middleware/rateLimiter';
 
@@ -65,6 +66,9 @@ app.get('/', (req: Request, res: Response) => {
 // (health check is inside generateRoutes but doesn't need auth,
 //  so we apply auth selectively in the route file)
 app.use('/api', generateRoutes);
+
+// Admin routes (auth + admin middleware applied inside the router)
+app.use('/api/admin', adminRoutes);
 
 // 404 handler
 app.use((req: Request, res: Response) => {

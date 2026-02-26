@@ -17,6 +17,7 @@ interface Config {
   enableTranslation: boolean;
   firebaseServiceAccountKey: string;
   maxGenerationsPerUserPerDay: number;
+  adminEmails: string[];
 }
 
 const config: Config = {
@@ -32,6 +33,7 @@ const config: Config = {
   enableTranslation: process.env.ENABLE_TRANSLATION === 'true',
   firebaseServiceAccountKey: process.env.FIREBASE_SERVICE_ACCOUNT_KEY || '',
   maxGenerationsPerUserPerDay: parseInt(process.env.MAX_GENERATIONS_PER_USER_PER_DAY || '10', 10),
+  adminEmails: (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim()).filter(Boolean),
 };
 
 // Validate required environment variables
