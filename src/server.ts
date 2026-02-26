@@ -7,6 +7,9 @@ import { apiLimiter } from './middleware/rateLimiter';
 
 const app: Application = express();
 
+// Trust first proxy (Render, Heroku, etc.) so rate-limiters see the real client IP
+app.set('trust proxy', 1);
+
 // ============================================
 // Middleware
 // ============================================
