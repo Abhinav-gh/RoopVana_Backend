@@ -40,8 +40,11 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
-// Apply rate limiting to all API routes
-app.use('/api', apiLimiter);
+// Apply rate limiting to API routes (except admin — protected by auth + admin middleware)
+app.use('/api', (req, res, next) => {
+  if (req.path.startsWith('/admin')) return next();
+  return apiLimiter(req, res, next);
+});
 
 // ============================================
 // Routes
