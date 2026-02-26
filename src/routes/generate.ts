@@ -282,33 +282,71 @@ router.post(
 );
 
 /**
- * GET /api/user/quota
- * Get the current user's remaining generation quota
+ * GET /api/user/credits
+ * Get the current user's credit balance
  */
 router.get(
-  '/user/quota',
+  '/user/credits',
   authMiddleware,
   asyncHandler(async (req: Request, res: Response) => {
     const uid = req.user!.uid;
-    const today = new Date().toISOString().split('T')[0];
     const usageRef = db.collection('userUsage').doc(uid);
     const usageDoc = await usageRef.get();
-    const maxGenerations = require('../config/env').default.maxGenerationsPerUserPerDay;
 
-    let generationsToday = 0;
+    let credits = 0;
+    let totalGenerations = 0;
 
     if (usageDoc.exists) {
       const data = usageDoc.data()!;
-      if (data.lastResetDate === today) {
-        generationsToday = data.generationsToday || 0;
+      credits = data.credits ?? 0;
+      totalGenerations = data.totalGenerations ?? 0;
+      // Ensure email is stored/updated for admin searchability
+      if (!data.email) {
+        await usageRef.update({ email: req.user!.email || '' });
       }
+    } else {
+      // First-time: create doc with 0 credits
+      await usageRef.set({
+        credits: 0,
+        totalGenerations: 0,
+        email: req.user!.email || '',
+        createdAt: new Date().toISOString(),
+      });
     }
 
     res.json({
       success: true,
-      generationsToday,
-      remainingGenerations: Math.max(0, maxGenerations - generationsToday),
-      maxGenerations,
+      credits,
+      totalGenerations,
+    });
+  })
+);
+
+/**
+ * POST /api/user/request-credits
+ * Submit a request for more credits (admin reviews manually)
+ */
+router.post(
+  '/user/request-credits',
+  authMiddleware,
+  asyncHandler(async (req: Request, res: Response) => {
+    const uid = req.user!.uid;
+    const email = req.user!.email;
+    const { message } = req.body;
+
+    await db.collection('creditRequests').add({
+      userId: uid,
+      email: email,
+      message: message || 'Requesting more credits',
+      status: 'pending',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    console.log(`📩 Credit request from ${email} (${uid})`);
+
+    res.json({
+      success: true,
+      message: 'Your credit request has been submitted. An admin will review it shortly.',
     });
   })
 );

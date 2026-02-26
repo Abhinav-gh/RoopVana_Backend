@@ -68,6 +68,7 @@ export const userCreditLimiter = async (
       await usageRef.set({
         credits: 0,
         totalGenerations: 0,
+        email: req.user?.email || '',
         createdAt: new Date().toISOString(),
       });
     }
