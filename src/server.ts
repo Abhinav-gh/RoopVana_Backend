@@ -16,6 +16,7 @@ app.set('trust proxy', 1);
 // ============================================
 
 // CORS configuration
+console.log('🌐 Allowed CORS origins:', config.allowedOrigins);
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps or curl requests)
@@ -24,10 +25,13 @@ app.use(cors({
     if (config.allowedOrigins.includes(origin) || config.nodeEnv === 'development') {
       callback(null, true);
     } else {
+      console.warn(`⚠️ CORS blocked origin: "${origin}"`);
       callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
 // Body parsing - increased limits for large image uploads
