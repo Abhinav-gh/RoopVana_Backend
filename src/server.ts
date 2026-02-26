@@ -44,8 +44,9 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
-// Apply rate limiting to API routes (except admin — protected by auth + admin middleware)
+// Apply rate limiting to API routes (skip admin routes & preflight OPTIONS)
 app.use('/api', (req, res, next) => {
+  if (req.method === 'OPTIONS') return next(); // Don't rate-limit preflight
   if (req.path.startsWith('/admin')) return next();
   return apiLimiter(req, res, next);
 });
