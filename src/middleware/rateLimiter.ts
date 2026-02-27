@@ -1,6 +1,7 @@
 import rateLimit from 'express-rate-limit';
 import { Request, Response, NextFunction } from 'express';
 import { db } from '../config/firebaseAdmin';
+import admin from '../config/firebaseAdmin';
 import config from '../config/env';
 
 // General API rate limiter (IP-based, secondary defense)
@@ -120,20 +121,19 @@ export const userCreditLimiter = async (
 };
 
 /**
- * Get the user's current credit balance.
- * Use this to include credits in the generation response.
- * (Credit was already deducted in the middleware transaction.)
+ * Refund 1 credit to a user after a failed generation.
+ * Uses FieldValue.increment for atomicity — safe even during concurrent operations.
+ * Also decrements totalGenerations since the generation didn't complete.
  */
-export const getUserCredits = async (uid: string): Promise<number> => {
+export const refundUserCredit = async (uid: string): Promise<void> => {
   try {
     const usageRef = db.collection('userUsage').doc(uid);
-    const usageDoc = await usageRef.get();
-    if (usageDoc.exists) {
-      return usageDoc.data()?.credits ?? 0;
-    }
-    return 0;
+    await usageRef.update({
+      credits: admin.firestore.FieldValue.increment(1),
+      totalGenerations: admin.firestore.FieldValue.increment(-1),
+    });
+    console.log(`🔄 Refunded 1 credit to user ${uid} (generation failed)`);
   } catch (error: any) {
-    console.error('❌ Error reading user credits:', error.message);
-    return -1;
+    console.error(`❌ Error refunding credit for ${uid}:`, error.message);
   }
 };

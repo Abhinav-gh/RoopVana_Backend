@@ -18,6 +18,7 @@ interface Config {
   firebaseServiceAccountKey: string;
   maxGenerationsPerUserPerDay: number;
   adminEmails: string[];
+  geminiMaxConcurrent: number;
 }
 
 const config: Config = {
@@ -34,6 +35,7 @@ const config: Config = {
   firebaseServiceAccountKey: process.env.FIREBASE_SERVICE_ACCOUNT_KEY || '',
   maxGenerationsPerUserPerDay: parseInt(process.env.MAX_GENERATIONS_PER_USER_PER_DAY || '10', 10),
   adminEmails: (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim()).filter(Boolean),
+  geminiMaxConcurrent: parseInt(process.env.GEMINI_MAX_CONCURRENT || '4', 10),
 };
 
 // Validate required environment variables

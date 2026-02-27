@@ -9,10 +9,11 @@ import {
   HealthCheckResponse 
 } from '../types';
 import { asyncHandler, AppError } from '../middleware/errorHandler';
-import { speechLimiter, userCreditLimiter } from '../middleware/rateLimiter';
+import { speechLimiter, userCreditLimiter, refundUserCredit } from '../middleware/rateLimiter';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { db } from '../config/firebaseAdmin';
 import admin from '../config/firebaseAdmin';
+import geminiQueue from '../services/geminiQueue';
 
 const router = Router();
 
@@ -101,10 +102,13 @@ router.post(
 
     // Validation
     if (!prompt || !prompt.trim()) {
+      // Refund since validation failed after credit was reserved
+      await refundUserCredit(req.user!.uid);
       throw new AppError('Prompt is required', 400);
     }
 
     if (!language) {
+      await refundUserCredit(req.user!.uid);
       throw new AppError('Language is required', 400);
     }
 
@@ -124,9 +128,11 @@ router.post(
       console.log(`✨ Improving prompt...`);
       const improvedPrompt = await geminiService.improvePrompt(englishPrompt);
 
-      // Step 3: Generate image
-      console.log(`🎨 Generating image...`);
-      const imageUrl = await geminiService.generateImage(improvedPrompt, language);
+      // Step 3: Generate image (queued for concurrency control)
+      console.log(`🎨 Generating image (queue: ${geminiQueue.getStatus().queuedCount} waiting)...`);
+      const imageUrl = await geminiQueue.enqueue(() =>
+        geminiService.generateImage(improvedPrompt, language)
+      );
 
       const generationTime = Date.now() - startTime;
 
@@ -159,7 +165,9 @@ router.post(
       console.log(`✅ Image generated in ${generationTime}ms (credits remaining: ${newCredits})`);
       res.json(response);
     } catch (error: any) {
-      console.error('❌ Image generation failed:', error);
+      // Refund the reserved credit since generation failed
+      await refundUserCredit(req.user!.uid);
+      console.error('❌ Image generation failed (credit refunded):', error);
       throw new AppError(error.message || 'Failed to generate image', 500);
     }
   })
@@ -178,6 +186,7 @@ router.post(
 
     // Validation
     if (!imageData) {
+      await refundUserCredit(req.user!.uid);
       throw new AppError('Image data is required', 400);
     }
 
@@ -190,9 +199,11 @@ router.post(
     const startTime = Date.now();
 
     try {
-      // Generate image using multimodal input
-      console.log(`🎨 Generating from reference image...`);
-      const imageUrl = await geminiService.generateFromImage(imageData, textPrompt || '');
+      // Generate image using multimodal input (queued for concurrency control)
+      console.log(`🎨 Generating from reference image (queue: ${geminiQueue.getStatus().queuedCount} waiting)...`);
+      const imageUrl = await geminiQueue.enqueue(() =>
+        geminiService.generateFromImage(imageData, textPrompt || '')
+      );
 
       const generationTime = Date.now() - startTime;
 
@@ -223,7 +234,9 @@ router.post(
       console.log(`✅ Image generated from reference in ${generationTime}ms (credits remaining: ${newCredits})`);
       res.json(response);
     } catch (error: any) {
-      console.error('❌ Image-to-image generation failed:', error);
+      // Refund the reserved credit since generation failed
+      await refundUserCredit(req.user!.uid);
+      console.error('❌ Image-to-image generation failed (credit refunded):', error);
       throw new AppError(error.message || 'Failed to generate image', 500);
     }
   })
@@ -280,6 +293,18 @@ router.post(
     }
   })
 );
+
+/**
+ * GET /api/queue-status
+ * Get the current Gemini request queue status
+ */
+router.get('/queue-status', (req: Request, res: Response) => {
+  const status = geminiQueue.getStatus();
+  res.json({
+    success: true,
+    ...status,
+  });
+});
 
 /**
  * GET /api/user/credits
