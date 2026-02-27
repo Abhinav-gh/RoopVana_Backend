@@ -9,7 +9,7 @@ import {
   HealthCheckResponse 
 } from '../types';
 import { asyncHandler, AppError } from '../middleware/errorHandler';
-import { speechLimiter, userCreditLimiter, deductUserCredit } from '../middleware/rateLimiter';
+import { speechLimiter, userCreditLimiter } from '../middleware/rateLimiter';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { db } from '../config/firebaseAdmin';
 import admin from '../config/firebaseAdmin';
@@ -130,10 +130,10 @@ router.post(
 
       const generationTime = Date.now() - startTime;
 
-      // Step 4: Deduct 1 credit
-      const newCredits = await deductUserCredit(req.user!.uid);
+      // Credits already deducted atomically in the middleware transaction
+      const newCredits = (req as any).currentCredits ?? 0;
 
-      // Step 5: Store request data in Firestore for feedback analysis
+      // Step 4: Store request data in Firestore for feedback analysis
       await storeUserRequestData({
         userId: req.user!.uid,
         email: req.user!.email,
@@ -196,8 +196,8 @@ router.post(
 
       const generationTime = Date.now() - startTime;
 
-      // Deduct 1 credit
-      const newCredits = await deductUserCredit(req.user!.uid);
+      // Credits already deducted atomically in the middleware transaction
+      const newCredits = (req as any).currentCredits ?? 0;
 
       // Store request data in Firestore for feedback analysis
       await storeUserRequestData({

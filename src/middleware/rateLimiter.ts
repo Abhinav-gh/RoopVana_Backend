@@ -33,9 +33,17 @@ export const speechLimiter = rateLimit({
 
 /**
  * Per-user credit-based generation limiter using Firestore.
- * Users start with 0 credits — admin must grant credits manually.
- * Each image generation costs 1 credit.
- * Blocks generation when credits = 0.
+ * Uses a Firestore transaction to atomically check AND deduct 1 credit,
+ * preventing race conditions when the same user sends concurrent requests.
+ *
+ * Flow:
+ *   1. Begin transaction → read userUsage doc
+ *   2. If doc doesn't exist → create with 0 credits, abort (no credits)
+ *   3. If credits <= 0 → abort (no credits)
+ *   4. Deduct 1 credit + increment totalGenerations → commit
+ *
+ * Because the check and deduction happen inside a single transaction,
+ * two simultaneous requests can never both succeed on the last credit.
  */
 export const userCreditLimiter = async (
   req: Request,
@@ -56,24 +64,40 @@ export const userCreditLimiter = async (
 
   try {
     const usageRef = db.collection('userUsage').doc(uid);
-    const usageDoc = await usageRef.get();
 
-    let credits = 0;
+    const result = await db.runTransaction(async (transaction) => {
+      const usageDoc = await transaction.get(usageRef);
 
-    if (usageDoc.exists) {
+      if (!usageDoc.exists) {
+        // First-time user — create doc with 0 credits
+        transaction.set(usageRef, {
+          credits: 0,
+          totalGenerations: 0,
+          email: req.user?.email || '',
+          displayName: req.user?.displayName || '',
+          createdAt: new Date().toISOString(),
+        });
+        return { success: false as const, credits: 0 };
+      }
+
       const data = usageDoc.data()!;
-      credits = data.credits ?? 0;
-    } else {
-      // First-time user — create doc with 0 credits
-      await usageRef.set({
-        credits: 0,
-        totalGenerations: 0,
-        email: req.user?.email || '',
-        createdAt: new Date().toISOString(),
-      });
-    }
+      const currentCredits = data.credits ?? 0;
 
-    if (credits <= 0) {
+      if (currentCredits <= 0) {
+        return { success: false as const, credits: 0 };
+      }
+
+      // Atomically deduct 1 credit and increment generation count
+      const newCredits = currentCredits - 1;
+      transaction.update(usageRef, {
+        credits: newCredits,
+        totalGenerations: (data.totalGenerations || 0) + 1,
+      });
+
+      return { success: true as const, credits: newCredits };
+    });
+
+    if (!result.success) {
       res.status(429).json({
         success: false,
         error: 'No Credits',
@@ -84,11 +108,11 @@ export const userCreditLimiter = async (
       return;
     }
 
-    // Attach credits info to request for use in response
-    (req as any).currentCredits = credits;
+    // Attach remaining credits to request for use in response
+    (req as any).currentCredits = result.credits;
     next();
   } catch (error: any) {
-    console.error('❌ Error checking user credits:', error.message);
+    console.error('❌ Error in credit transaction:', error.message);
     // On Firestore error, allow the request (fail open)
     (req as any).currentCredits = -1;
     next();
@@ -96,26 +120,20 @@ export const userCreditLimiter = async (
 };
 
 /**
- * Deduct 1 credit from user after a successful generation.
- * Returns the new credit balance.
+ * Get the user's current credit balance.
+ * Use this to include credits in the generation response.
+ * (Credit was already deducted in the middleware transaction.)
  */
-export const deductUserCredit = async (uid: string): Promise<number> => {
+export const getUserCredits = async (uid: string): Promise<number> => {
   try {
     const usageRef = db.collection('userUsage').doc(uid);
     const usageDoc = await usageRef.get();
-
     if (usageDoc.exists) {
-      const data = usageDoc.data()!;
-      const newCredits = Math.max(0, (data.credits ?? 0) - 1);
-      await usageRef.update({
-        credits: newCredits,
-        totalGenerations: (data.totalGenerations || 0) + 1,
-      });
-      return newCredits;
+      return usageDoc.data()?.credits ?? 0;
     }
     return 0;
   } catch (error: any) {
-    console.error('❌ Error deducting user credit:', error.message);
+    console.error('❌ Error reading user credits:', error.message);
     return -1;
   }
 };
