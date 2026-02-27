@@ -300,9 +300,12 @@ router.get(
       const data = usageDoc.data()!;
       credits = data.credits ?? 0;
       totalGenerations = data.totalGenerations ?? 0;
-      // Ensure email is stored/updated for admin searchability
-      if (!data.email) {
-        await usageRef.update({ email: req.user!.email || '' });
+      // Ensure email and displayName are stored/updated for admin searchability
+      const updates: Record<string, string> = {};
+      if (!data.email) updates.email = req.user!.email || '';
+      if (!data.displayName) updates.displayName = req.user!.displayName || '';
+      if (Object.keys(updates).length > 0) {
+        await usageRef.update(updates);
       }
     } else {
       // First-time: create doc with 0 credits
@@ -310,6 +313,7 @@ router.get(
         credits: 0,
         totalGenerations: 0,
         email: req.user!.email || '',
+        displayName: req.user!.displayName || '',
         createdAt: new Date().toISOString(),
       });
     }

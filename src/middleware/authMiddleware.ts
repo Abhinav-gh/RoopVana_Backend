@@ -8,6 +8,7 @@ declare global {
       user?: {
         uid: string;
         email: string;
+        displayName: string;
       };
     }
   }
@@ -42,6 +43,7 @@ export const authMiddleware = async (
     req.user = {
       uid: decodedToken.uid,
       email: decodedToken.email || '',
+      displayName: decodedToken.name || '',
     };
     next();
   } catch (error: any) {
