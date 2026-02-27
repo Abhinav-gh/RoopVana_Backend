@@ -232,19 +232,22 @@ router.put(
       reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // If approved with credits, add to user
+    // If approved with credits, atomically add to user's balance
+    // Uses FieldValue.increment() to avoid race conditions with concurrent generations
     if (status === 'approved' && typeof credits === 'number' && credits > 0) {
       const usageRef = db.collection('userUsage').doc(data.userId);
       const usageDoc = await usageRef.get();
 
       if (usageDoc.exists) {
-        const currentCredits = usageDoc.data()?.credits ?? 0;
-        await usageRef.update({ credits: currentCredits + credits });
+        await usageRef.update({
+          credits: admin.firestore.FieldValue.increment(credits),
+        });
       } else {
         await usageRef.set({
           credits,
           totalGenerations: 0,
           email: data.email || '',
+          displayName: '',
           createdAt: new Date().toISOString(),
         });
       }
