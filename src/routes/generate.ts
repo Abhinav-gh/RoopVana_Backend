@@ -423,12 +423,16 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     const uid = req.user!.uid;
     const email = req.user!.email;
-    const { message } = req.body;
+    const { message, requestedCredits } = req.body;
+    
+    // Parse to ensure it's a number, default to 0 if not provided
+    const parsedCredits = parseInt(requestedCredits as any) || 0;
 
     await db.collection('creditRequests').add({
       userId: uid,
       email: email,
       message: message || 'Requesting more credits',
+      requestedCredits: parsedCredits,
       status: 'pending',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -463,6 +467,8 @@ router.get(
       return {
         id: doc.id,
         message: data.message,
+        requestedCredits: data.requestedCredits || 0,
+        approvedCredits: data.approvedCredits,
         status: data.status,
         createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
         reviewedAt: data.reviewedAt?.toDate?.()?.toISOString() || null,

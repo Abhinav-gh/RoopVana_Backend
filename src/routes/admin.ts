@@ -193,6 +193,8 @@ router.get(
         userId: data.userId,
         email: data.email,
         message: data.message,
+        requestedCredits: data.requestedCredits || 0,
+        approvedCredits: data.approvedCredits,
         status: data.status,
         createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
       };
@@ -228,6 +230,7 @@ router.put(
     // Update request status
     await reqRef.update({
       status,
+      approvedCredits: status === 'approved' ? (credits || 0) : 0,
       reviewedBy: req.user?.email,
       reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
