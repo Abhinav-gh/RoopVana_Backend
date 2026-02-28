@@ -14,6 +14,7 @@ import { authMiddleware } from '../middleware/authMiddleware';
 import { db } from '../config/firebaseAdmin';
 import admin from '../config/firebaseAdmin';
 import geminiQueue from '../services/geminiQueue';
+import config from '../config/env';
 
 const router = Router();
 
@@ -308,45 +309,93 @@ router.get('/queue-status', (req: Request, res: Response) => {
 
 /**
  * GET /api/user/credits
- * Get the current user's credit balance
+ * Get the current user's credit balance.
+ * Also performs a lazy daily top-up: if ≥24 hours have passed since
+ * lastCreditRefresh, awards up to dailyCreditIncrement credits (capped
+ * at maxCreditsPerUser). If user already has ≥ max, no credits are
+ * added but existing balance is NOT reduced.
+ * Admin users (config.adminEmails) are exempt from the daily scheme.
  */
 router.get(
   '/user/credits',
   authMiddleware,
   asyncHandler(async (req: Request, res: Response) => {
     const uid = req.user!.uid;
+    const email = (req.user!.email || '').toLowerCase();
+    const isAdmin = config.adminEmails.map(e => e.toLowerCase()).includes(email);
+
     const usageRef = db.collection('userUsage').doc(uid);
-    const usageDoc = await usageRef.get();
 
-    let credits = 0;
-    let totalGenerations = 0;
+    // Run inside a transaction so concurrent calls can't double-award
+    const result = await db.runTransaction(async (transaction) => {
+      const usageDoc = await transaction.get(usageRef);
 
-    if (usageDoc.exists) {
+      if (!usageDoc.exists) {
+        // First-time user — create doc with 0 credits, no top-up yet
+        const now = new Date().toISOString();
+        transaction.set(usageRef, {
+          credits: 0,
+          totalGenerations: 0,
+          email: req.user!.email || '',
+          displayName: req.user!.displayName || '',
+          lastCreditRefresh: now,
+          createdAt: now,
+        });
+        return {
+          credits: 0,
+          totalGenerations: 0,
+          creditTopUp: null, // first visit, no top-up
+        };
+      }
+
       const data = usageDoc.data()!;
-      credits = data.credits ?? 0;
-      totalGenerations = data.totalGenerations ?? 0;
-      // Ensure email and displayName are stored/updated for admin searchability
-      const updates: Record<string, string> = {};
+      let credits = data.credits ?? 0;
+      const totalGenerations = data.totalGenerations ?? 0;
+
+      // Ensure email and displayName are stored/updated
+      const updates: Record<string, any> = {};
       if (!data.email) updates.email = req.user!.email || '';
       if (!data.displayName) updates.displayName = req.user!.displayName || '';
-      if (Object.keys(updates).length > 0) {
-        await usageRef.update(updates);
+
+      // --- Daily credit top-up (skip for admins) ---
+      let creditTopUp: { awarded: number; capped: boolean; newBalance: number } | null = null;
+
+      if (!isAdmin) {
+        const lastRefresh = data.lastCreditRefresh
+          ? new Date(data.lastCreditRefresh).getTime()
+          : 0;
+        const now = Date.now();
+        const twentyFourHours = 24 * 60 * 60 * 1000;
+
+        if (now - lastRefresh >= twentyFourHours) {
+          // Eligible for daily top-up
+          if (credits >= config.maxCreditsPerUser) {
+            // Already at or above cap — don't add, don't reduce
+            creditTopUp = { awarded: 0, capped: true, newBalance: credits };
+          } else {
+            // Add credits, but cap at maxCreditsPerUser
+            const maxCanAdd = config.maxCreditsPerUser - credits;
+            const awarded = Math.min(config.dailyCreditIncrement, maxCanAdd);
+            credits += awarded;
+            updates.credits = credits;
+            creditTopUp = { awarded, capped: awarded < config.dailyCreditIncrement, newBalance: credits };
+          }
+          updates.lastCreditRefresh = new Date().toISOString();
+        }
       }
-    } else {
-      // First-time: create doc with 0 credits
-      await usageRef.set({
-        credits: 0,
-        totalGenerations: 0,
-        email: req.user!.email || '',
-        displayName: req.user!.displayName || '',
-        createdAt: new Date().toISOString(),
-      });
-    }
+
+      if (Object.keys(updates).length > 0) {
+        transaction.update(usageRef, updates);
+      }
+
+      return { credits, totalGenerations, creditTopUp };
+    });
 
     res.json({
       success: true,
-      credits,
-      totalGenerations,
+      credits: result.credits,
+      totalGenerations: result.totalGenerations,
+      creditTopUp: result.creditTopUp,
     });
   })
 );

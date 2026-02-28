@@ -1,7 +1,7 @@
 {
-  "name": "vastra-ai-backend",
-  "version": "1.0.0",
-  "description": "Backend API for VastraAI - AI Fashion Design Generator",
+  "name": "roopvana-backend",
+  "version": "2.0.0",
+  "description": "Backend API for RoopVana - AI Fashion Design Generator",
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon src/server.ts",
@@ -15,7 +15,7 @@
     "gemini",
     "image-generation"
   ],
-  "author": "Your Name",
+  "author": "Abhinav Deshpande",
   "license": "MIT",
   "dependencies": {
     "@google-cloud/speech": "^6.2.0",
