@@ -333,11 +333,24 @@ router.get(
       if (!usageDoc.exists) {
         // First-time user — create doc with 0 credits, no top-up yet
         const now = new Date().toISOString();
+        let fallbackName = req.user!.displayName;
+        if (!fallbackName) {
+           try {
+             // Fallback: if token is stale and missing name, fetch from Firebase Auth directly
+             const fbUser = await admin.auth().getUser(uid);
+             fallbackName = fbUser.displayName || '';
+             // Ensure email is also updated if missing
+             if (!req.user!.email && fbUser.email) req.user!.email = fbUser.email;
+           } catch(e) {
+             console.error('Failed to fetch user from Firebase admin during userUsage init:', e);
+           }
+        }
+        
         transaction.set(usageRef, {
           credits: 0,
           totalGenerations: 0,
           email: req.user!.email || '',
-          displayName: req.user!.displayName || '',
+          displayName: fallbackName || '',
           lastCreditRefresh: now,
           createdAt: now,
         });

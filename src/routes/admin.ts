@@ -281,9 +281,12 @@ router.get(
 
     usageSnap.docs.forEach((doc) => {
       const data = doc.data();
-      totalGenerations += data.totalGenerations || 0;
-      totalCreditsInCirculation += data.credits || 0;
-      if ((data.credits || 0) > 0) activeUsers++;
+      const userGenerations = parseInt(data.totalGenerations as any) || 0;
+      const userCredits = parseInt(data.credits as any) || 0;
+      
+      totalGenerations += userGenerations;
+      totalCreditsInCirculation += userCredits;
+      if (userCredits > 0) activeUsers++;
     });
 
     // Count pending credit requests
