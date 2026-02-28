@@ -442,4 +442,54 @@ router.post(
   })
 );
 
+/**
+ * GET /api/user/credit-requests
+ * Fetch the authenticated user's credit request history and total credits used.
+ */
+router.get(
+  '/user/credit-requests',
+  authMiddleware,
+  asyncHandler(async (req: Request, res: Response) => {
+    const uid = req.user!.uid;
+
+    // Fetch user's credit requests (remove orderBy to avoid needing a composite index)
+    const snap = await db
+      .collection('creditRequests')
+      .where('userId', '==', uid)
+      .get();
+
+    const requests = snap.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        message: data.message,
+        status: data.status,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
+        reviewedAt: data.reviewedAt?.toDate?.()?.toISOString() || null,
+      };
+    });
+
+    // Sort in-memory by createdAt descending
+    requests.sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return dateB - dateA;
+    });
+
+    // Fetch total credits used (totalGenerations) from userUsage
+    const usageDoc = await db.collection('userUsage').doc(uid).get();
+    let totalCreditsUsed = 0;
+    if (usageDoc.exists) {
+      const data = usageDoc.data();
+      totalCreditsUsed = parseInt(data?.totalGenerations as any) || 0;
+    }
+
+    res.json({ 
+      success: true, 
+      requests, 
+      totalCreditsUsed 
+    });
+  })
+);
+
 export default router;
