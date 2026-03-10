@@ -77,6 +77,7 @@ export const userCreditLimiter = async (
           email: req.user?.email || '',
           displayName: req.user?.displayName || '',
           createdAt: new Date().toISOString(),
+          approved: false,
         });
         return { success: false as const, credits: 0 };
       }

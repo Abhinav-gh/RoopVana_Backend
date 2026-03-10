@@ -353,11 +353,13 @@ router.get(
           displayName: fallbackName || '',
           lastCreditRefresh: now,
           createdAt: now,
+          approved: false,
         });
         return {
           credits: 0,
           totalGenerations: 0,
           creditTopUp: null, // first visit, no top-up
+          approved: false,
         };
       }
 
@@ -370,10 +372,11 @@ router.get(
       if (!data.email) updates.email = req.user!.email || '';
       if (!data.displayName) updates.displayName = req.user!.displayName || '';
 
-      // --- Daily credit top-up (skip for admins) ---
+      // --- Daily credit top-up (skip for admins and unapproved users) ---
       let creditTopUp: { awarded: number; capped: boolean; newBalance: number } | null = null;
+      const userApproved = data.approved === true;
 
-      if (!isAdmin) {
+      if (!isAdmin && userApproved) {
         const lastRefresh = data.lastCreditRefresh
           ? new Date(data.lastCreditRefresh).getTime()
           : 0;
@@ -401,7 +404,7 @@ router.get(
         transaction.update(usageRef, updates);
       }
 
-      return { credits, totalGenerations, creditTopUp };
+      return { credits, totalGenerations, creditTopUp, approved: userApproved };
     });
 
     res.json({
@@ -409,6 +412,7 @@ router.get(
       credits: result.credits,
       totalGenerations: result.totalGenerations,
       creditTopUp: result.creditTopUp,
+      approved: result.approved,
     });
   })
 );

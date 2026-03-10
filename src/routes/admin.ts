@@ -131,8 +131,54 @@ router.put(
 );
 
 // ============================================
-// Generation Requests Log
+// Credit Requests Management (continued below)
 // ============================================
+
+/**
+ * PUT /api/admin/usage/:uid/approve
+ * Approve or revoke a user's access.
+ * Body: { approved: boolean, grantStartingCredits?: boolean }
+ * When approved with grantStartingCredits, sets credits to dailyCreditIncrement (10)
+ * if the user currently has 0 credits.
+ */
+router.put(
+  '/usage/:uid/approve',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { approved, grantStartingCredits } = req.body;
+    if (typeof approved !== 'boolean') {
+      throw new AppError('approved must be a boolean', 400);
+    }
+
+    const ref = db.collection('userUsage').doc(req.params.uid);
+    const doc = await ref.get();
+
+    const updates: Record<string, any> = { approved };
+
+    if (approved && grantStartingCredits) {
+      const currentCredits = doc.exists ? (doc.data()?.credits ?? 0) : 0;
+      if (currentCredits === 0) {
+        updates.credits = 10; // Grant starting credits
+      }
+    }
+
+    if (doc.exists) {
+      await ref.update(updates);
+    } else {
+      await ref.set({
+        credits: updates.credits ?? 0,
+        totalGenerations: 0,
+        email: '',
+        displayName: '',
+        createdAt: new Date().toISOString(),
+        approved,
+      });
+    }
+
+    console.log(`✅ Admin ${req.user?.email} ${approved ? 'approved' : 'revoked'} user ${req.params.uid}${updates.credits ? ` (+${updates.credits} starting credits)` : ''}`);
+    res.json({ success: true, uid: req.params.uid, approved, credits: updates.credits });
+  })
+);
+
 
 /**
  * GET /api/admin/requests
