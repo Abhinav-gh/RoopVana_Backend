@@ -99,7 +99,7 @@ router.post(
   authMiddleware,
   userCreditLimiter,
   asyncHandler(async (req: Request<{}, {}, GenerateImageRequest>, res: Response<GenerateImageResponse>) => {
-    const { prompt, language, style } = req.body;
+    const { prompt, language, style, outfitMode } = req.body;
 
     // Validation
     if (!prompt || !prompt.trim()) {
@@ -113,23 +113,16 @@ router.post(
       throw new AppError('Language is required', 400);
     }
 
-    console.log(`📝 Image generation request from ${req.user?.email}:`, { prompt, language, style });
+    console.log(`📝 Image generation request from ${req.user?.email}:`, { prompt: prompt.substring(0, 100) + '...', language, style, outfitMode });
 
     const startTime = Date.now();
 
     try {
-      // Step 1: Translate prompt to English if needed
-      let englishPrompt = prompt;
-      if (language !== 'en' && language !== 'en-US' && language !== 'en-IN') {
-        console.log(`🌐 Translating prompt from ${language} to English...`);
-        englishPrompt = await geminiService.translateToEnglish(prompt, language);
-      }
+      // Step 1: Improve prompt with mode-aware enhancement (handles multilingual inline)
+      console.log(`✨ Improving prompt (${outfitMode || 'full'} mode)...`);
+      const improvedPrompt = await geminiService.improvePrompt(prompt, outfitMode || 'full');
 
-      // Step 2: Improve prompt for better image generation
-      console.log(`✨ Improving prompt...`);
-      const improvedPrompt = await geminiService.improvePrompt(englishPrompt);
-
-      // Step 3: Generate image (queued for concurrency control)
+      // Step 2: Generate image (queued for concurrency control)
       console.log(`🎨 Generating image (queue: ${geminiQueue.getStatus().queuedCount} waiting)...`);
       const imageUrl = await geminiQueue.enqueue(() =>
         geminiService.generateImage(improvedPrompt, language)
