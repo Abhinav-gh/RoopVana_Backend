@@ -14,6 +14,7 @@ import { authMiddleware } from '../middleware/authMiddleware';
 import { db } from '../config/firebaseAdmin';
 import admin from '../config/firebaseAdmin';
 import geminiQueue from '../services/geminiQueue';
+import cloudinaryService from '../services/cloudinary';
 import config from '../config/env';
 
 const router = Router();
@@ -29,8 +30,10 @@ const storeUserRequestData = async (data: {
   improvedPrompt: string;
   language: string;
   style: string | null;
+  outfitMode: string | null;
   inputImageProvided: boolean;
   generationTimeMs: number;
+  generatedImageUrl: string | null;
   success: boolean;
 }) => {
   try {
@@ -133,7 +136,16 @@ router.post(
       // Credits already deducted atomically in the middleware transaction
       const newCredits = (req as any).currentCredits ?? 0;
 
-      // Step 4: Store request data in Firestore for feedback analysis
+      // Step 3: Upload image to Cloudinary (non-blocking for generation success)
+      let generatedImageUrl: string | null = null;
+      if (imageUrl.startsWith('data:image')) {
+        const uploadResult = await cloudinaryService.uploadImage(imageUrl, req.user!.uid);
+        if (uploadResult) {
+          generatedImageUrl = uploadResult.url;
+        }
+      }
+
+      // Step 4: Store request data in Firestore for feedback analysis and history
       await storeUserRequestData({
         userId: req.user!.uid,
         email: req.user!.email,
@@ -142,8 +154,10 @@ router.post(
         improvedPrompt: improvedPrompt,
         language: language,
         style: style || null,
+        outfitMode: outfitMode || 'full',
         inputImageProvided: false,
         generationTimeMs: generationTime,
+        generatedImageUrl: generatedImageUrl,
         success: true,
       });
 
@@ -204,7 +218,16 @@ router.post(
       // Credits already deducted atomically in the middleware transaction
       const newCredits = (req as any).currentCredits ?? 0;
 
-      // Store request data in Firestore for feedback analysis
+      // Upload image to Cloudinary (non-blocking for generation success)
+      let generatedImageUrl: string | null = null;
+      if (imageUrl.startsWith('data:image')) {
+        const uploadResult = await cloudinaryService.uploadImage(imageUrl, req.user!.uid);
+        if (uploadResult) {
+          generatedImageUrl = uploadResult.url;
+        }
+      }
+
+      // Store request data in Firestore for feedback analysis and history
       await storeUserRequestData({
         userId: req.user!.uid,
         email: req.user!.email,
@@ -213,8 +236,10 @@ router.post(
         improvedPrompt: '',
         language: 'en',
         style: style || null,
+        outfitMode: null,
         inputImageProvided: true,
         generationTimeMs: generationTime,
+        generatedImageUrl: generatedImageUrl,
         success: true,
       });
 
@@ -491,6 +516,47 @@ router.get(
       success: true, 
       requests, 
       totalCreditsUsed 
+    });
+  })
+);
+
+/**
+ * GET /api/user/generation-history
+ * Fetch the authenticated user's generation history.
+ */
+router.get(
+  '/user/generation-history',
+  authMiddleware,
+  asyncHandler(async (req: Request, res: Response) => {
+    const uid = req.user!.uid;
+
+    const snap = await db
+      .collection('userRequests')
+      .where('userId', '==', uid)
+      .where('success', '==', true)
+      .orderBy('timestamp', 'desc')
+      .limit(100)
+      .get();
+
+    const history = snap.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        type: data.type,
+        prompt: data.prompt,
+        improvedPrompt: data.improvedPrompt,
+        language: data.language,
+        style: data.style,
+        outfitMode: data.outfitMode,
+        generatedImageUrl: data.generatedImageUrl,
+        generationTimeMs: data.generationTimeMs,
+        timestamp: data.timestamp?.toDate?.()?.toISOString() || null,
+      };
+    });
+
+    res.json({ 
+      success: true, 
+      history 
     });
   })
 );

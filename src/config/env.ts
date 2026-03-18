@@ -21,6 +21,9 @@ interface Config {
   geminiMaxConcurrent: number;
   dailyCreditIncrement: number;
   maxCreditsPerUser: number;
+  cloudinaryCloudName: string;
+  cloudinaryApiKey: string;
+  cloudinaryApiSecret: string;
 }
 
 const config: Config = {
@@ -40,6 +43,9 @@ const config: Config = {
   geminiMaxConcurrent: parseInt(process.env.GEMINI_MAX_CONCURRENT || '4', 10),
   dailyCreditIncrement: parseInt(process.env.DAILY_CREDIT_INCREMENT || '10', 10),
   maxCreditsPerUser: parseInt(process.env.MAX_CREDITS_PER_USER || '30', 10),
+  cloudinaryCloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
+  cloudinaryApiKey: process.env.CLOUDINARY_API_KEY || '',
+  cloudinaryApiSecret: process.env.CLOUDINARY_API_SECRET || '',
 };
 
 // Validate required environment variables
