@@ -529,14 +529,31 @@ router.get(
   authMiddleware,
   asyncHandler(async (req: Request, res: Response) => {
     const uid = req.user!.uid;
+    const cursor = req.query.cursor as string | undefined;
 
-    const snap = await db
+    let query = db
       .collection('userRequests')
       .where('userId', '==', uid)
       .where('success', '==', true)
       .orderBy('timestamp', 'desc')
-      .limit(100)
-      .get();
+      .limit(10);
+
+    if (cursor) {
+      const cursorDoc = await db.collection('userRequests').doc(cursor).get();
+      if (cursorDoc.exists) {
+        query = query.startAfter(cursorDoc);
+      }
+    }
+
+    const snap = await query.get();
+
+    // Fetch total generations for the UI
+    let totalGenerations = 0;
+    const usageDoc = await db.collection('userUsage').doc(uid).get();
+    if (usageDoc.exists) {
+      const data = usageDoc.data();
+      totalGenerations = parseInt(data?.totalGenerations as any) || 0;
+    }
 
     const history = snap.docs.map((doc) => {
       const data = doc.data();
@@ -556,7 +573,8 @@ router.get(
 
     res.json({ 
       success: true, 
-      history 
+      history,
+      totalGenerations
     });
   })
 );
