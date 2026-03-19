@@ -155,7 +155,9 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-// Start the server
-startServer();
+// Start the server if not in test environment
+if (process.env.NODE_ENV !== 'test') {
+  startServer();
+}
 
 export default app;
