@@ -231,33 +231,69 @@ class GeminiService {
   }
 
   /**
-   * Improve prompt quality using Gemini
+   * Improve prompt quality using Gemini with mode-specific structure preservation
+   * and built-in multilingual support (translates non-English text inline).
    */
-  /**
-   * Improve prompt quality using Gemini with strict structure preservation
-   */
-  async improvePrompt(userPrompt: string): Promise<string> {
+  async improvePrompt(userPrompt: string, outfitMode: 'full' | 'custom' = 'full'): Promise<string> {
     try {
-      const systemInstruction = `
-You are an expert AI prompt engineer for a high-end fashion image generator.
-Your goal is to enhance the descriptive quality of the user's prompt (adding details about lighting, fabric texture, fold drapery, color depth, and atmosphere) WITHOUT changing the structural constraints or meaning.
+      const commonRules = `
+CRITICAL RULES (apply to ALL modes):
+1. MULTILINGUAL: The input may contain text in Hindi, Marathi, Tamil, Telugu, Punjabi, Bengali, or other Indian languages. You MUST understand it, translate it to English, and incorporate its meaning naturally into the enhanced prompt. Do NOT drop or ignore non-English text.
+2. ENHANCE DESCRIPTIONS: Add details about lighting, fabric texture, fold drapery, color depth, and atmosphere to make the prompt more vivid. Keep it concise and apt.
+3. NO HALLUCINATIONS: Do not add items (like hats, glasses, jewelry) unless implied by the style or explicitly requested.
+4. BE CONCISE: Do not add conversational filler ("Here is an improved prompt..."). Just return the prompt directly.
+5. PRESERVE NEGATIVE CONSTRAINTS: If the user says "DO NOT generate...", "Crop out...", or "Focus camera on...", you MUST include these instructions exactly as they are. Do not rephrase or remove them.
+6. PRESERVE ALL DETAILS: If garment, fabric, print type, color, or any other selection detail has been specified, make sure you emphasize it in the enhanced prompt.`;
 
-CRITICAL RULES:
-1. PRESERVE STRUCTURE: If the user input contains distinct sections like "UPPER BODY ONLY:", "LOWER BODY ONLY:", "HEADWEAR:", or "FOOTWEAR:", you MUST separate your output into the same sections. Do NOT merge them into a single paragraph.
-2. PRESERVE DETAILS: If the garmet fabric and print type or any other detail has been added by the user, make sure you emphasize on it in the corresponding section.
-3. PRESERVE NEGATIVE CONSTRAINTS: If the user says "DO NOT generate...", "Crop out...", or "Focus camera on...", you MUST include these instructions exactly as they are. Do not rephrase or remove them.
-4. ENHANCE DESCRIPTIONS: Inside each section, enhance the description, however keep it apt.
-5. NO HALLUCINATIONS: Do not add items (like hats, glasses, jewelry) unless implied by the style or explicitly requested.
-6. BE CONCISE: Do not add conversational filler ("Here is an improved prompt..."). Just return the prompt directly.
-`;
+      let modeSpecificRules = '';
 
-      const finalPrompt = `${systemInstruction}\n\nInput Prompt:\n"${userPrompt}"\n\nKindy provide the Improved Prompt:`;
+      if (outfitMode === 'full') {
+        modeSpecificRules = `
+MODE: FULL OUTFIT
+You are enhancing a structured fashion prompt for a FULL OUTFIT (single garment covering the whole body, like a saree, lehenga, dress, or sherwani).
+
+STRUCTURE PRESERVATION — You MUST preserve these structural markers as labeled sections in your output:
+- "Gender:" — Keep the gender context exactly as specified
+- "Model:" — Keep the model/person type description
+- "Body type:" — Keep the body type description
+- "Pose:" — Keep the pose/posture description
+- "Color:" — Keep the color specification
+- "OUTFIT:" / "Garment:" / "Fabric:" / "Pattern:" — Keep these garment specification sections
+- "Design preference:" — Keep design style preferences
+
+Your output must maintain these as clearly labeled sections. Within each section, enhance the description with vivid fashion photography details. Do NOT merge all sections into a single prose paragraph.`;
+      } else {
+        modeSpecificRules = `
+MODE: CUSTOM (UPPER + LOWER BODY)
+You are enhancing a structured fashion prompt where the upper body and lower body have SEPARATE styling.
+
+STRUCTURE PRESERVATION — You MUST preserve these structural markers as labeled sections in your output:
+- "Gender:" — Keep the gender context exactly as specified
+- "Model:" — Keep the model/person type description
+- "Body type:" — Keep the body type description
+- "Pose:" — Keep the pose/posture description
+- "UPPER BODY ONLY (from shoulders to waist):" — Keep this section separate with its own styling
+- "LOWER BODY ONLY (from waist to feet):" — Keep this section separate with its own styling
+- "FOOTWEAR:" — Keep footwear as its own section
+- "HEADWEAR:" — Keep headwear as its own section
+- "ACCESSORY (...):" — Keep each accessory section separate
+- "IMPORTANT:" — Preserve any cross-section constraint instructions exactly
+
+Your output must maintain these as clearly labeled sections. Within each section, enhance the description with vivid fashion photography details. Do NOT merge upper and lower body descriptions. Do NOT mix styles between sections.`;
+      }
+
+      const systemInstruction = `You are an expert AI prompt engineer for a high-end fashion image generator.
+Your goal is to enhance the descriptive quality of the user's prompt WITHOUT changing the structural constraints or meaning.
+${commonRules}
+${modeSpecificRules}`;
+
+      const finalPrompt = `${systemInstruction}\n\nInput Prompt:\n"${userPrompt}"\n\nProvide the Improved Prompt:`;
 
       const result = await this.textModel.generateContent(finalPrompt);
       const response = await result.response;
       const improvedPrompt = response.text();
 
-      console.log(`✨ Improved prompt: "${improvedPrompt.trim()}"`);
+      console.log(`✨ Improved prompt (${outfitMode} mode): "${improvedPrompt.trim()}"`);
       return improvedPrompt.trim();
     } catch (error) {
       console.error('❌ Prompt improvement error:', error);
