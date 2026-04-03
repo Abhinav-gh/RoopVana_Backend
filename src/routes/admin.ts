@@ -188,11 +188,18 @@ router.get(
   '/requests',
   asyncHandler(async (req: Request, res: Response) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
-    const snap = await db
-      .collection('userRequests')
-      .orderBy('timestamp', 'desc')
-      .limit(limit)
-      .get();
+    const cursorId = req.query.cursor as string;
+
+    let query = db.collection('userRequests').orderBy('timestamp', 'desc');
+
+    if (cursorId) {
+      const cursorDoc = await db.collection('userRequests').doc(cursorId).get();
+      if (cursorDoc.exists) {
+        query = query.startAfter(cursorDoc);
+      }
+    }
+
+    const snap = await query.limit(limit).get();
 
     const requests = snap.docs.map((doc) => {
       const data = doc.data();
@@ -214,7 +221,7 @@ router.get(
       };
     });
 
-    res.json({ success: true, requests, total: requests.length });
+    res.json({ success: true, requests, total: requests.length, hasMore: requests.length === limit });
   })
 );
 
