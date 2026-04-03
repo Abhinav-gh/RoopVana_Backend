@@ -7,7 +7,14 @@ import config from './env';
 // In local dev, use the service account key file
 let serviceAccount: admin.ServiceAccount;
 
-if (config.firebaseServiceAccountKey) {
+if (config.nodeEnv === 'test') {
+  // Dummy service account for test environments
+  serviceAccount = {
+    projectId: 'test-project',
+    clientEmail: 'test@example.com',
+    privateKey: 'test-key',
+  } as admin.ServiceAccount;
+} else if (config.firebaseServiceAccountKey) {
   // Production: parse JSON string from env var
   try {
     serviceAccount = JSON.parse(config.firebaseServiceAccountKey) as admin.ServiceAccount;
